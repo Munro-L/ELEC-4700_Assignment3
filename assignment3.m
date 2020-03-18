@@ -16,7 +16,15 @@ a = F/m;
 
 % The following section of code is mostly pulled directly from the first
 % part of Assignment 1, however with the addition of the force on each
-% electron
+% electron, and computation for current over time
+
+% current is coulombs/s over a cross sectional area, so given the density
+% is 10E15/cm^2, current can be measured by how many particles pass over a
+% given slice of the semiconductor. In this case, we might as well put
+% this in the boundary case for the left/right sides of the box. Every
+% electron that crosses the boundary contributes an elementary charge in
+% one time step.
+
 num_particles = 10;
 colours = ["r", "g", "b", "c", "y", "k", "m"];
 
@@ -41,8 +49,10 @@ angles = randn(num_particles, 1) .* 2 * pi;
 particles(:, 3) = randn(num_particles, 1) + vth*cos(angles);
 particles(:, 4) = randn(num_particles, 1) + vth*sin(angles);
 
+current_tracker = [];
 for i = 0:50      % each step is a femtosecond
     previous_particles = particles;
+    current_count = 0;
     
     % update positions
     particles(:, 1) = particles(:, 1) + particles(:, 4);
@@ -52,11 +62,13 @@ for i = 0:50      % each step is a femtosecond
     x_boundary_changes_right = particles(:, 2) > 200;
     if any(x_boundary_changes_right)
         particles(:, 2) = particles(:, 2) .* ~x_boundary_changes_right;
+        current_count = current_count + nnz(x_boundary_changes_right);
     end
 
     x_boundary_changes_left = particles(:, 2) < 0;
     if any(x_boundary_changes_left)
         particles(:, 2) = particles(:, 2) + 200 * x_boundary_changes_left - abs(particles(:, 2) .* x_boundary_changes_left);
+        current_count = current_count + nnz(x_boundary_changes_left);
     end
     
     y_boundary_changes_upper = particles(:, 1) > 100;
@@ -80,6 +92,9 @@ for i = 0:50      % each step is a femtosecond
     particles(:,3) = particles(:,3) + a*cos(theta);
     particles(:,4) = particles(:,4) + a*sin(theta);
     
+    % add current to array tracking it per timestep
+    current_tracker = [current_tracker, current_count*1.602E-19];
+    
     % plot position updates of particles, 
     % ignoring those that passed the x-boundary
     x_boundary_affected = x_boundary_changes_right | x_boundary_changes_left;
@@ -94,3 +109,37 @@ for i = 0:50      % each step is a femtosecond
     hold on
     pause(0.1)
 end
+
+% plot current vs. time
+figure
+plot(1:51, current_tracker)
+title('Plot of current vs. timestep')
+
+% This section constructs a density map based on the final positions of all
+% particles.
+density_data = ceil((particles(:, 1:2)./10)).*10;      % fancy way of rounding to the nearest 10
+density_data(:,2) = mod(density_data(:,2), 200); 
+density_data(:,2) = density_data(:,2) + ~density_data(:,2);  % janky way of making sure there are no zeros, set to 1 instead
+grid = zeros(100, 200);
+for i = 1:length(density_data)
+    grid(density_data(i, 1), density_data(i, 2)) = grid(density_data(i, 1), density_data(i, 2)) + 1;
+end
+figure
+imagesc(grid)
+title('Density Plot')
+
+% Temperature map can be done in a similar way as density map, except
+% instead of considering particle positions, we look at the velocities and
+% find the temperature of each particle to show in the density map with their position.
+heat_data = (particles(:, 3:4) .* 1E15 .* m ./ kb).^2;
+position_data = ceil((particles(:, 1:2)./10)).*10;
+position_data(:,2) = mod(position_data(:,2), 200); 
+position_data(:,2) = position_data(:,2) + ~position_data(:,2);  % janky way of making sure there are no zeros, set to 1 instead
+grid = zeros(100, 200);
+for i = 1:length(position_data)
+    grid(position_data(i, 1), position_data(i, 2)) = grid(position_data(i, 1), position_data(i, 2)) + sqrt(heat_data(i, 1)^2 + heat_data(i, 2)^2);
+end
+figure
+imagesc(grid)
+title('Temperature Plot')
+
